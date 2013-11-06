@@ -1,0 +1,1796 @@
+<!DOCTYPE HTML>
+<html lang="en-US">
+<head>
+<meta charset="UTF-8">
+<!--<meta name="viewport" content="width=320,height=480,user-scalable=no,initial-scale=1.0,maximum-scale=1.0">-->
+<meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title></title>
+<style type="text/css">
+*{
+	margin:0;
+	padding:0;
+}
+body{
+	background-color:black;
+}
+</style>
+<script type="text/javascript" src="cordova-2.4.0.js"></script>
+<script type="text/javascript" src="enchant.min.js"></script>
+<script type="text/javascript" src="ui.enchant.js"></script>
+<script type="text/javascript">
+enchant();
+
+//Webかアプリか切り替え
+//0: Web
+//1: アプリ
+var appFlg = 1;
+
+//アプリの場合のOS切り替え
+//0: Android
+//1: iPhone
+//2: Windows Phone
+var osFlg = 0;
+
+window.onload = function(){
+	if(appFlg == 0){
+		main();
+	}
+	else{
+		var intervalID = window.setInterval(function(){
+			document.addEventListener("deviceready", function(){
+				main();
+			},false);
+			window.clearInterval(intervalID);
+		},500);
+	}
+};
+
+var main = function(){
+	
+	function getPath(){
+		var str = location.pathname;
+		var i = str.lastIndexOf('/');
+		return str.substring(0,i+1);
+	}
+	
+	//四角に集めた初期座標
+	var tangramX = 190;
+	var tangramY = 10;
+	
+	//四角に集めた全体サイズ
+	var tangramW = 120;
+	var tangramH = 120;
+	
+	//動かせる図形
+	var active = 0;
+	
+	//バーチャルパッド移動距離
+	var move = 1;
+	
+	//配色
+	var color = [
+		'red',
+		'orange',
+		'purple',
+		'blue',
+		'yellow',
+		'green',
+		'indigo',
+	];
+	
+	//ゲーム中BGM
+	var bgmGame, bgmGameTimer;
+	//クリア時BGM
+	var bgmClear, bgmClearTimer;
+	
+	var seFlg = true;
+	
+	//図形初期頂点座標
+	var axis = [
+		[0, 0, tangramW * 0.5, tangramH * 0.5, tangramW, 0],
+		[0, 0, 0, tangramH, tangramW * 0.5, tangramH * 0.5],
+		[tangramW * 0.5,0,0, tangramH * 0.5, tangramW * 0.5, tangramH * 0.5],
+		[tangramW * 0.25, 0, 0, tangramH * 0.25, tangramW * 0.25, tangramH * 0.5, tangramW * 0.5, tangramH * 0.25],
+		[0,tangramH * 0.25,0,tangramH * 0.75, tangramW * 0.25, tangramH * 0.5, tangramW * 0.25, 0],
+		[0, tangramH * 0.25, tangramW * 0.25, tangramH * 0.5, tangramW * 0.25, 0],
+		[tangramW * 0.25, 0, 0,tangramH * 0.25, tangramW * 0.5, tangramH * 0.25]
+	];
+	
+	//図形初期配置座標
+	var initAxis = [
+		[0, 0],
+		[0, 0],
+		[tangramW * 0.5, tangramH * 0.5],
+		[tangramW * 0.25, tangramH * 0.5],
+		[tangramW * 0.75, 0],
+		[tangramW * 0.5, tangramH * 0.25],
+		[0, tangramH * 0.75]
+	];
+	
+	//図形サイズ
+	var size = [
+		[tangramW,tangramH * 0.5],
+		[tangramW * 0.5, tangramH],
+		[tangramW * 0.5, tangramH * 0.5],
+		[tangramW * 0.5, tangramH * 0.5],
+		[tangramW * 0.25, tangramH * 0.75],
+		[tangramW * 0.25, tangramH * 0.5],
+		[tangramW * 0.5, tangramH * 0.25]
+	];
+	
+	//ユーザーエージェント
+    var ua = navigator.userAgent;
+    //ベンダープレフィックス
+    var VENDER_PREFIX = '';
+    if(ua.indexOf('Opera') != -1){
+        VENDER_PREFIX = 'O';
+    }else if(ua.indexOf('MSIE') != -1){
+        VENDER_PREFIX = 'ms';
+    }else if(ua.indexOf('WebKit') != -1){
+        VENDER_PREFIX = 'webkit';
+    }else if(navigator.product == 'Gecko'){
+        VENDER_PREFIX = 'Moz';
+    }else{
+        VENDER_PREFIX = '';
+    }
+	
+	var game = new Game(320, 480);
+	game.fps = 16;
+	
+	if(appFlg == 0){
+		game.preload(
+			'img/button.png',
+			'img/bg-root.png',
+			'img/bg-house.png',
+			'img/butterfly64.png',
+			'sound/menu.mp3',
+			'sound/menu_2.mp3',
+			'sound/menu_3.mp3',
+			'sound/get.mp3',
+			'sound/toy.mp3',
+			'sound/deai.mp3',
+			'sound/ashitaetudukusora.mp3'
+		);
+	}
+	else{
+		game.preload(
+			'img/button.png',
+			'img/bg-root.png',
+			'img/bg-house.png',
+			'img/butterfly64.png'
+		);
+	}
+
+	var originX, originY;
+	
+	//正解フラグ
+	var correctFlg = [false, false, false, false, false, false, false];
+	
+	//重複判定
+	var bigTriangle = [false, false, false];
+	var smallTriangle = [false, false, false, false, false, false, false, false]
+	
+	//ゲーム中
+	var gameFlg = false;
+	//クリア中
+	var clearFlg = false;
+	
+	//ENTER_FRAMEリムーブ時に1階通る問題対策
+	var onEnterFrameCnt = 0;
+	
+	//ゲーム読み込み時
+	game.onload = function(){
+		
+		var bg = new Sprite(320, 480);
+		bg.image = game.assets['img/bg-root.png'];
+		game.rootScene.addChild(bg);
+		
+		bg.addEventListener(enchant.Event.TOUCH_START,function(e){
+			game.pushScene(game.sceneHouse());
+		},false);
+		
+		if(appFlg == 1){
+			var label1 = new Label('おわる');
+			label1.moveTo(10,10);
+			label1.color = 'red';
+			label1.font = '24px "Serif"';
+			game.rootScene.addChild(label1);
+		
+			label1.addEventListener(enchant.Event.TOUCH_START, function(e){
+				//アプリの終了
+				navigator.app.exitApp(); 
+			});
+		}
+	};
+	
+	//ハウスのシーン
+	game.sceneHouse = function(){
+		
+		//BGM再生
+		if(appFlg == 1){
+			//読み込み待ち時間
+			setTimeout(function(){
+				if(gameFlg == false){
+					bgmGame = new Media(getPath() + 'sound/toy.mp3',
+					function(){
+						//
+					},function(e){
+						alert('もんだいがおきました');
+					});
+					bgmGame.play();
+					//ゲーム開始
+					gameFlg = true;
+				}
+				
+				//BGMくりかえし
+				bgmGameTimer = setInterval(function(){
+					bgmGame.getCurrentPosition(
+						function(position){
+							if (position > -1) {
+								if(position == -0.001){
+									bgmGame = new Media(getPath() + 'sound/toy.mp3',
+									function(){
+										//
+									},function(e){
+										alert('もんだいがおきました');
+									});
+									bgmGame.play();
+								}
+							}
+							
+						},
+						function(e){
+							alert('もんだいがおきました');
+						}
+					);
+				}, 1000);
+					
+			}, 1000);
+		}
+		
+		var scene = new Scene();
+		
+		var bg = new Sprite(320, 480);
+		bg.image = game.assets['img/bg-house.png'];
+		bg.x = 0;
+		bg.y = 0;
+		
+		scene.addChild(bg);
+		
+		var surface = [];
+		var sprite = [];
+		
+		for(var i = 0; i < axis.length; i++){
+			
+			surface[i] = new Surface(size[i][0], size[i][1]);
+			sprite[i] = new Sprite(size[i][0], size[i][1]);
+			
+			surface[i].context.fillStyle = color[i];
+			surface[i].context.beginPath();
+			
+			surface[i].context.moveTo(axis[i][0], axis[i][1]);
+			surface[i].context.lineTo(axis[i][2], axis[i][3]);
+			surface[i].context.lineTo(axis[i][4], axis[i][5]);
+			if(axis[i].length > 6){
+				surface[i].context.lineTo(axis[i][6], axis[i][7]);
+			}
+			surface[i].context.closePath();
+			surface[i].context.fill();
+			surface[i].context.save();
+			if(i == 0){
+				surface[i].context.strokeStyle = '#ffff00';
+			}
+			else{
+				surface[i].context.strokeStyle = '#cccccc';
+			}
+			surface[i].context.lineWidth = 2;
+			surface[i].context.stroke();
+			
+			sprite[i].image = surface[i];
+			
+			sprite[i].x = tangramX + initAxis[i][0];
+			sprite[i].y = tangramY + initAxis[i][1];
+			
+			scene.addChild(sprite[i]);
+		}
+		
+		//最初の図形を一番上にする
+		scene.removeChild(sprite[0]);
+		scene.addChild(sprite[0]);
+		
+		//蝶々
+		var butterfly = [];
+		//蝶々の数
+		var butterflyCnt = 0;
+		
+		//十字キー作成
+		var pad = new Pad();
+		pad.x = 10;
+		pad.y = 350;
+		scene.addChild(pad);
+		
+		//ボタン作成
+		var buttonA = new Sprite(50, 50);
+		buttonA.image = game.assets['img/button.png'];
+		buttonA.x = 250;
+		buttonA.y = 370;
+		buttonA.buttonMode = 'a';
+		
+		scene.addChild(buttonA);
+		
+		var buttonB = new Sprite(50, 50);
+		buttonB.image = game.assets['img/button.png'];
+		buttonB.x = 180;
+		buttonB.y = 370;
+		buttonB.buttonMode = 'b';
+		
+		scene.addChild(buttonB);
+		
+		game.keybind(88, 'a');
+		game.keybind(90, 'b');
+		
+		var label1 = new Label('うごかす');
+		label1.moveTo(13,325);
+		label1.color = '#ff0000';
+		label1.font = '24px "Serif"';
+		scene.addChild(label1);
+		
+		var label2 = new Label('まわす');
+		label2.moveTo(169,340);
+		label2.color = '#ffff00';
+		label2.font = '24px "Serif"';
+		scene.addChild(label2);
+		
+		var label3 = new Label('えらぶ');
+		label3.moveTo(240,340);
+		label3.color = '#0000ff';
+		label3.font = '24px "Serif"';
+		scene.addChild(label3);
+		
+		//もどるボタン
+		var label4 = new Label('もどる');
+		label4.moveTo(10,10);
+		label4.color = 'green';
+		label4.font = '24px "Serif"';
+		scene.addChild(label4);
+		
+		//おわるボタン
+		if(appFlg == 1){
+			var label5 = new Label('おわる');
+			label5.moveTo(10,45);
+			label5.color = 'orange';
+			label5.font = '24px "Serif"';
+			scene.addChild(label5);
+		}
+		
+		var swipeX;
+		var swipeY;
+		var swipeFlg = false;
+						
+		//もどるぼたんでリセット
+		label4.addEventListener(Event.TOUCH_START, function(e){
+			
+			//シーンリセット
+			game.removeEventListener(enchant.Event.ENTER_FRAME, onEnterFrameGame);
+			game.removeEventListener(enchant.Event.ENTER_FRAME, onEnterFrameClear);
+			game.popScene();
+			game.pushScene(game.sceneHouse());
+			
+			//gameFlg = false;
+			
+			//BGM停止
+			if(appFlg == 0){
+				if(gameFlg == true){
+					bgmGame.stop();
+					gameFlg = false;
+				}
+				
+				if(clearFlg == true){
+					bgmClear.stop();
+					clearFlg = false;
+				}
+			}
+			else{
+				if(gameFlg == true){
+					bgmGame.pause();
+					bgmGame.release();
+					gameFlg = false;
+				}
+				
+				if(clearFlg == true){
+					bgmClear.pause();
+					bgmClear.release();
+					clearFlg = false;
+				}
+			}
+			
+			active = 0;
+			
+			for(var i = 0; i < correctFlg.length; i++){
+				correctFlg[i] = false;
+			}
+			
+			for(var i = 0; i < bigTriangle.length; i++){
+				bigTriangle[i] = false;
+			}
+			
+			for(var i = 0; i < smallTriangle.length; i++){
+				smallTriangle[i] = false;
+			}
+			
+			for(var i = 0; i < axis.length; i++){
+				scene.removeChild(sprite[i]);
+				scene.addChild(sprite[i]);
+			}
+			
+			for(var i = 0; i < butterfly.length; i++){
+				scene.removeChild(butterfly[i]);
+			}
+			
+			butterfly.clear();
+        });
+		
+		//おわるボタンでゲーム終了
+		if(appFlg == 1){
+			label5.addEventListener(enchant.Event.TOUCH_START, function(e){
+				
+				//BGM停止
+				if(appFlg == 0){
+					if(gameFlg == true){
+						bgmGame.stop();
+						gameFlg = false;
+					}
+					
+					if(clearFlg == true){
+						bgmClear.stop();
+						clearFlg = false;
+					}
+				}
+				else{
+					if(gameFlg == true){
+						bgmGame.pause();
+						bgmGame.release();
+						gameFlg = false;
+					}
+					
+					if(clearFlg == true){
+						bgmClear.pause();
+						clearFlg = false;
+					}
+				}
+				
+				//アプリの終了
+				navigator.app.exitApp(); 
+			},false);
+		}
+		
+		bg.addEventListener(enchant.Event.TOUCH_START, function(e){
+			swipeX = Math.floor(e.x - this.x);
+			swipeY = Math.floor(e.y - this.y);
+			
+			if(correctFlg[active] == false){
+				swipeFlg = true;
+			}
+		},false);
+		bg.addEventListener(enchant.Event.TOUCH_MOVE, function(e){
+			
+			if(swipeX < Math.floor(e.x - swipeX) && swipeFlg == true){
+			    sprite[active]._style[VENDER_PREFIX + 'TransformOrigin'] = '50% 50%';
+				sprite[active].rotate(45);
+				
+				swipeFlg = false;
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu_3.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu_3.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						
+						//var seWait = setTimeout(function(){
+							se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+			else if(swipeX > Math.floor(e.x - swipeX) && swipeFlg == true){
+				sprite[active]._style[VENDER_PREFIX + 'TransformOrigin'] = '50% 50%';
+				sprite[active].rotate(45);
+				
+				swipeFlg = false;
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu_3.mp3'];
+					se.play();	
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu_3.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+			if(swipeY < Math.floor(e.y - swipeY) && swipeFlg == true){
+			    sprite[active]._style[VENDER_PREFIX + 'TransformOrigin'] = '50% 50%';
+				sprite[active].rotate(45);
+				
+				swipeFlg = false;
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu_3.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu_3.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+			else if(swipeY > Math.floor(e.y - swipeY) && swipeFlg == true){
+				sprite[active]._style[VENDER_PREFIX + 'TransformOrigin'] = '50% 50%';
+				sprite[active].rotate(45);
+				
+				swipeFlg = false;
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu_3.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu_3.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		},false);
+		
+		//タッチでactive切り替え
+		sprite[0].addEventListener(enchant.Event.TOUCH_START, onTouchStartSprite0);
+		function onTouchStartSprite0(e){
+			active = 0;	
+			
+			scene.removeChild(sprite[0]);
+			scene.addChild(sprite[0]);
+			
+			if(correctFlg[0] == false){
+					originX = Math.floor(e.x - this.x);
+					originY = Math.floor(e.y - this.y);
+			}	
+		}
+		
+		sprite[0].addEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite0);
+		function onTouchMoveSprite0(e){
+			if(correctFlg[0] == false){
+				this.x = Math.floor(e.x - originX);
+				this.y = Math.floor(e.y - originY);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(err){
+							//
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		}
+		
+		sprite[1].addEventListener(enchant.Event.TOUCH_START, onTouchStartSprite1);
+		function onTouchStartSprite1(e){
+			active = 1;
+			
+			scene.removeChild(sprite[1]);
+			scene.addChild(sprite[1]);
+			
+			if(correctFlg[1] == false){
+					originX = Math.floor(e.x - this.x);
+					originY = Math.floor(e.y - this.y);
+			}		
+		}
+		
+		sprite[1].addEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite1);
+		function onTouchMoveSprite1(e){
+			if(correctFlg[1] == false){
+				this.x = Math.floor(e.x - originX);
+				this.y = Math.floor(e.y - originY);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(err){
+							//
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		}
+		
+		sprite[2].addEventListener(enchant.Event.TOUCH_START, onTouchStartSprite2);
+		function onTouchStartSprite2(e){
+			active = 2;
+			
+			scene.removeChild(sprite[2]);
+			scene.addChild(sprite[2]);
+			
+			if(correctFlg[2] == false){
+					originX = Math.floor(e.x - this.x);
+					originY = Math.floor(e.y - this.y);
+			}			
+		}
+		
+		sprite[2].addEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite2);
+		function onTouchMoveSprite2(e){
+			if(correctFlg[2] == false){
+				this.x = Math.floor(e.x - originX);
+				this.y = Math.floor(e.y - originY);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		}
+		
+		sprite[3].addEventListener(enchant.Event.TOUCH_START, onTouchStartSprite3);
+		function onTouchStartSprite3(e){
+			active = 3;
+			
+			scene.removeChild(sprite[3]);
+			scene.addChild(sprite[3]);
+			
+			if(correctFlg[3] == false){
+					originX = Math.floor(e.x - this.x);
+					originY = Math.floor(e.y - this.y);
+			}				
+		}
+		
+		sprite[3].addEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite3);
+		function onTouchMoveSprite3(e){
+			if(correctFlg[3] == false){
+				this.x = Math.floor(e.x - originX);
+				this.y = Math.floor(e.y - originY);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(err){
+							//
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		}
+		
+		sprite[4].addEventListener(enchant.Event.TOUCH_START, onTouchStartSprite4);
+		function onTouchStartSprite4(e){
+			active = 4;
+			
+			scene.removeChild(sprite[4]);
+			scene.addChild(sprite[4]);
+			
+			if(correctFlg[4] == false){
+					originX = Math.floor(e.x - this.x);
+					originY = Math.floor(e.y - this.y);
+			}			
+		}
+		
+		sprite[4].addEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite4);
+		function onTouchMoveSprite4(e){
+			if(correctFlg[4] == false){
+				this.x = Math.floor(e.x - originX);
+				this.y = Math.floor(e.y - originY);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(err){
+							//
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		}
+		
+		sprite[5].addEventListener(enchant.Event.TOUCH_START, onTouchStartSprite5);
+		function onTouchStartSprite5(e){
+			active = 5;
+			
+			scene.removeChild(sprite[5]);
+			scene.addChild(sprite[5]);
+			
+			if(correctFlg[5] == false){
+					originX = Math.floor(e.x - this.x);
+					originY = Math.floor(e.y - this.y);
+			}				
+		}
+		
+		sprite[5].addEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite5);
+		function onTouchMoveSprite5(e){
+			if(correctFlg[5] == false){
+				this.x = Math.floor(e.x - originX);
+				this.y = Math.floor(e.y - originY);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(err){
+							//
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		}
+		
+		sprite[6].addEventListener(enchant.Event.TOUCH_START, onTouchStartSprite6);
+		function onTouchStartSprite6(e){
+			active = 6;
+			
+			scene.removeChild(sprite[6]);
+			scene.addChild(sprite[6]);
+			
+			
+			if(correctFlg[6] == false){
+					originX = Math.floor(e.x - this.x);
+					originY = Math.floor(e.y - this.y);
+			}			
+		}
+		
+		sprite[6].addEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite6);
+		function onTouchMoveSprite6(e){
+			if(correctFlg[6] == false){
+				this.x = Math.floor(e.x - originX);
+				this.y = Math.floor(e.y - originY);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+			}
+		}
+		
+		//***** ENTER_FRAME *****//
+		
+		//ゲーム中
+		game.addEventListener(enchant.Event.ENTER_FRAME, onEnterFrameGame);
+		
+		function onEnterFrameGame(){
+				
+			//ENTER_FRAMEリムーブ時に1階通る問題対策
+			if(onEnterFrameCnt > 2){
+				onEnterFrameCnt = 0;
+			}
+			
+			//BGM再生
+			if(appFlg == 0){
+				bgmGame = game.assets['sound/toy.mp3'];
+				bgmGame.play();
+				
+				gameFlg = true;
+			}
+			
+			//正解数を数える
+			var correctCnt = 0;
+			for(var i = 0; i < correctFlg.length; i++){
+				if(correctFlg[i] == true){
+					correctCnt++;
+					if(correctCnt == 7){
+						
+						//ゲームクリア
+						clearFlg = true;
+						
+						if(appFlg == 0){
+							//BGM停止	
+							bgmGame.stop();
+							
+							if(gameFlg == true){
+								var se = game.assets['sound/deai.mp3'];
+								se.play();
+								//ゲーム終了
+								gameFlg = false;
+							}
+							
+							//ゲーム終了
+							//gameFlg = false;
+						}
+						else{
+							//BGM停止
+							bgmGame.pause();
+							//bgmGame.release();
+							
+							clearInterval(bgmGameTimer);
+							
+							if(gameFlg == true){
+								var se = new Media(getPath() + 'sound/deai.mp3',
+								function(){
+									se.release();
+									//ゲーム終了
+									//gameFlg = false;
+								},function(e){
+									alert('もんだいがおきました');
+								});
+								se.play();
+								//ゲーム終了
+								gameFlg = false;
+							}
+						}
+							
+						game.removeEventListener(enchant.Event.ENTER_FRAME,onEnterFrameGame);
+						
+						if(clearFlg == true && gameFlg == false){
+							var clearWait = setTimeout(function(){
+								
+								if(appFlg == 0){
+									//
+								}
+								else{
+									bgmClear = new Media(getPath() + 'sound/ashitaetudukusora.mp3',
+									function(){
+										bgmClear.release();
+										clearFlg = false;
+									},function(e){
+										alert('もんだいがおきました');
+									});
+									bgmClear.play();
+									
+									bgmClearTimer = setInterval(function(){
+										bgmClear.getCurrentPosition(
+											function(position){
+												if (position > -1) {
+													if(position == -0.001){
+														bgmClear.pause();
+														clearFlg = false;
+													}
+												}
+												
+											},
+											function(e){
+												alert('もんだいがおきました');
+											}
+										);
+									}, 1000);
+								}
+								
+								game.addEventListener(enchant.Event.ENTER_FRAME, onEnterFrameClear);
+							},5000);
+						}
+						
+						butterflyCnt = Math.floor(Math.random() * 20);
+						
+						for(var i = 0; i < butterflyCnt; i++){
+							butterfly[i] = new Sprite(64,64);
+							
+							butterfly[i].image = game.assets["img/butterfly64.png"];
+							if(i % 2 == 0){
+								butterfly[i].x = -1 * (Math.floor(Math.random() * 160) + 64);
+							}
+							else{
+								butterfly[i].x = Math.floor(Math.random() * 160) + 320 + 64;
+							}
+							butterfly[i].y = 50 + Math.floor(Math.random() * 280);
+							var scale = Math.floor(Math.random() * 10) / 10;
+							butterfly[i].scaleX = scale;
+							butterfly[i].scaleY = scale;
+							butterfly[i].frame = Math.floor(Math.random() * 3);
+							butterfly[i].anim = [0,1,2,3];
+							
+							scene.addChild(butterfly[i]);
+						}
+						
+					}
+				}
+			}
+			
+			for(var i = 0; i < axis.length; i++){
+				surface[i].context.restore();
+				surface[i].context.strokeStyle = 'grey';
+				surface[i].context.lineWidth = 2;
+				surface[i].context.stroke();
+			}
+			
+			surface[active].context.restore();		
+			surface[active].context.strokeStyle = 'gold';
+			surface[active].context.lineWidth = 2;
+			surface[active].context.stroke();
+			
+			//うごかす
+			if(game.input.up){
+				if(correctFlg[active] == false){
+					sprite[active].y -= move;
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/menu.mp3'];
+						se.play();
+					}
+					else{
+						if(seFlg == true){
+							var se = new Media(getPath() + 'sound/menu.mp3',
+							function(){
+								se.release();
+								seFlg = true;
+							},function(e){
+								alert('もんだいがおきました');
+							});
+							
+							//var seWait = setTimeout(function(){
+							se.play();
+							//},100);
+							
+							seFlg = false;
+						}
+					}
+				}
+			}
+			if(game.input.down){
+				if(correctFlg[active] == false){
+					sprite[active].y += move;
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/menu.mp3'];
+						se.play();
+					}
+					else{
+						if(seFlg == true){
+							var se = new Media(getPath() + 'sound/menu.mp3',
+							function(){
+								se.release();
+								seFlg = true;
+							},function(err){
+								//
+							});
+							
+							//var seWait = setTimeout(function(){
+							se.play();
+							//},100);
+							
+							seFlg = false;
+						}
+					}
+				}
+			}
+			if(game.input.left){
+				if(correctFlg[active] == false){
+					sprite[active].x -= move;
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/menu.mp3'];
+						se.play();
+					}
+					else{
+						if(seFlg == true){
+							var se = new Media(getPath() + 'sound/menu.mp3',
+							function(){
+								se.release();
+								seFlg = true;
+							},function(e){
+								alert('もんだいがおきました');
+							});
+							
+							//var seWait = setTimeout(function(){
+							se.play();
+							//},100);
+							
+							seFlg = false;
+						}
+					}
+				}
+			}
+			if(game.input.right){
+				if(correctFlg[active] == false){
+					sprite[active].x += move;
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/menu.mp3'];
+						se.play();
+					}
+					else{
+						if(seFlg == true){
+							var se = new Media(getPath() + 'sound/menu.mp3',
+							function(){
+								se.release();
+								seFlg = true;
+							},function(e){
+								alert('もんだいがおきました');
+							});
+							
+							//var seWait = setTimeout(function(){
+							se.play();
+							//},100);
+							
+							seFlg = false;
+						}
+					}
+				}
+			}
+			//えらぶ
+			if(game.input.a){
+				
+				active = (active + 1) % 7;
+				
+				while(correctFlg[active]){
+					active = (active + 1) % 7;
+				}
+				
+				scene.removeChild(sprite[active]);
+				scene.addChild(sprite[active]);
+				
+				if(appFlg == 0){
+					var se = game.assets['sound/menu_2.mp3'];
+					se.play();
+				}
+				else{
+					if(seFlg == true){
+						var se = new Media(getPath() + 'sound/menu_2.mp3',
+						function(){
+							se.release();
+							seFlg = true;
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						
+						//var seWait = setTimeout(function(){
+						se.play();
+						//},100);
+						
+						seFlg = false;
+					}
+				}
+
+			}
+			//まわす
+			if(game.input.b){
+				if(correctFlg[active] == false){		    
+				    sprite[active]._style[VENDER_PREFIX + 'TransformOrigin'] = '50% 50%';
+					sprite[active].rotate(45);
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/menu_3.mp3'];
+						se.play();
+					}
+					else{
+						if(seFlg == true){
+							var se = new Media(getPath() + 'sound/menu_3.mp3',
+							function(){
+								se.release();
+								seFlg = true;
+							},function(e){
+								alert('もんだいがおきました');
+							});
+							
+							var seWait = setTimeout(function(){
+								se.play();
+							},100);
+							
+							seFlg = false;
+						}
+					}
+				}
+			}
+			
+			//***** 正解判定 *****//
+			//図形0（三角形大）
+			if(
+				sprite[0].x == 113 && sprite[0].y == 105 && sprite[0].rotation == 180
+				&& bigTriangle[0] == false ||
+				sprite[0].x == 92 && sprite[0].y == 167 && sprite[0].rotation == 180
+				&& bigTriangle[1] == false && smallTriangle[2] == false && smallTriangle[5] == false ||
+				sprite[0].x == 92 && sprite[0].y == 165 && sprite[0].rotation == 0
+				&& bigTriangle[2] == false && smallTriangle[0] == false && smallTriangle[3] == false
+			){
+				if(correctFlg[0] == false){
+				
+					//重複判定
+					if(sprite[0].x == 113 && sprite[0].y == 105 && sprite[0].rotation == 180){
+						bigTriangle[0] = true;
+					}
+					if(sprite[0].x == 92 && sprite[0].y == 167 && sprite[0].rotation == 180){
+						bigTriangle[1] = true;
+					}
+					if(sprite[0].x == 92 && sprite[0].y == 165 && sprite[0].rotation == 0){
+						bigTriangle[2] = true;
+					}
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/get.mp3'];
+						se.play();
+					}
+					else{
+						var se = new Media(getPath() + 'sound/get.mp3',
+						function(){
+							//
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						se.play();
+					}
+					
+					correctFlg[0] = true;
+					
+					surface[0].context.restore();	
+					surface[0].context.fillStyle = 'pink';
+					surface[0].context.fill();
+					surface[0].context.lineWidth = 2;
+					surface[0].context.stroke();
+					
+					for(var i = 0; i < axis.length; i++){
+						if(correctFlg[i] == false){
+							scene.removeChild(sprite[i]);
+							scene.addChild(sprite[i]);
+						}
+					}
+					
+					sprite[0].removeEventListener(enchant.Event.TOUCH_START, onTouchStartSprite0);
+					sprite[0].removeEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite0);
+				}
+			}
+						
+			//図形1（三角形大）
+			if(
+				sprite[1].x == 143 && sprite[1].y == 75 && sprite[1].rotation == 270
+				&& bigTriangle[0] == false ||
+				sprite[1].x == 123 && sprite[1].y == 137 && sprite[1].rotation == 270
+				&& bigTriangle[1] == false && smallTriangle[2] == false && smallTriangle[5] == false ||
+				sprite[1].x == 122 && sprite[1].y == 136 && sprite[1].rotation == 90
+				&& bigTriangle[2] == false && smallTriangle[0] == false && smallTriangle[3] == false
+			){
+				if(correctFlg[1] == false){
+				
+					//重複判定
+					if(sprite[1].x == 143 && sprite[1].y == 75 && sprite[1].rotation == 270){
+						bigTriangle[0] = true;
+					}
+					else if(sprite[1].x == 123 && sprite[1].y == 137 && sprite[1].rotation == 270){
+						bigTriangle[1] = true;
+					}
+					else if(sprite[1].x == 122 && sprite[1].y == 136 && sprite[1].rotation == 90){
+						bigTriangle[2] = true;
+					}
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/get.mp3'];
+						se.play();
+					}
+					else{
+						var se = new Media(getPath() + 'sound/get.mp3',
+						function(){
+							//
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						se.play();
+					}
+					
+					correctFlg[1] = true;
+					
+					surface[1].context.restore();	
+					surface[1].context.fillStyle = 'pink';
+					surface[1].context.fill();
+					surface[1].context.lineWidth = 2;
+					surface[1].context.stroke();
+					
+					for(var i = 0; i < axis.length; i++){
+						if(correctFlg[i] == false){
+							scene.removeChild(sprite[i]);
+							scene.addChild(sprite[i]);
+						}
+					}
+					
+					sprite[1].removeEventListener(enchant.Event.TOUCH_START, onTouchStartSprite1);
+					sprite[1].removeEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite1);
+				}
+			}
+			
+			//図形2（三角形中）
+			if(
+				sprite[2].x == 91 && sprite[2].y == 165 && sprite[2].rotation == 180 ||
+				sprite[2].x == 154 && sprite[2].y == 165 && sprite[2].rotation == 270 ||
+				sprite[2].x == 91 && sprite[2].y == 167 && sprite[2].rotation == 90 ||
+				sprite[2].x == 154 && sprite[2].y == 167 && sprite[2].rotation == 0
+			){
+				if(correctFlg[2] == false){
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/get.mp3'];
+						se.play();
+					}
+					else{
+						var se = new Media(getPath() + 'sound/get.mp3',
+						function(){
+							//
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						se.play();
+					}
+					
+					correctFlg[2] = true;
+					
+					surface[2].context.restore();	
+					surface[2].context.fillStyle = 'pink';
+					surface[2].context.fill();
+					surface[2].context.lineWidth = 2;
+					surface[2].context.stroke();
+					
+					for(var i = 0; i < axis.length; i++){
+						if(correctFlg[i] == false){
+							scene.removeChild(sprite[i]);
+							scene.addChild(sprite[i]);
+						}
+					}
+					
+					sprite[2].removeEventListener(enchant.Event.TOUCH_START, onTouchStartSprite2);
+					sprite[2].removeEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite2);
+				}
+			}
+			
+			//図形3（菱型）
+			if(
+				sprite[3].x == 103 && sprite[3].y == 72 && sprite[3].rotation == 45 ||
+				sprite[3].x == 103 && sprite[3].y == 72 && sprite[3].rotation == 135 ||
+				sprite[3].x == 103 && sprite[3].y == 72 && sprite[3].rotation == 225 ||
+				sprite[3].x == 103 && sprite[3].y == 72 && sprite[3].rotation == 315
+			){
+				if(correctFlg[3] == false){
+				
+					if(appFlg == 0){
+						var se = game.assets['sound/get.mp3'];
+						se.play();
+					}
+					else{
+						var se = new Media(getPath() + 'sound/get.mp3',
+						function(){
+							//
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						se.play();
+					}
+					
+					correctFlg[3] = true;
+					
+					surface[3].context.restore();	
+					surface[3].context.fillStyle = 'pink';
+					surface[3].context.fill();
+					surface[3].context.lineWidth = 2;
+					surface[3].context.stroke();
+					
+					for(var i = 0; i < axis.length; i++){
+						if(correctFlg[i] == false){
+							scene.removeChild(sprite[i]);
+							scene.addChild(sprite[i]);
+						}
+					}
+					
+					sprite[3].removeEventListener(enchant.Event.TOUCH_START, onTouchStartSprite3);
+					sprite[3].removeEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite3);
+				}
+			}
+			
+			//図形4（平行四辺形）
+			if(
+				sprite[4].x == 96 && sprite[4].y == 99 && sprite[4].rotation == 45 ||
+				sprite[4].x == 96 && sprite[4].y == 99 && sprite[4].rotation == 225
+			){
+				if(correctFlg[4] == false){
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/get.mp3'];
+						se.play();
+					}
+					else{
+						var se = new Media(getPath() + 'sound/get.mp3',
+						function(){
+							//
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						se.play();
+					}
+					
+					correctFlg[4] = true;
+					
+					surface[4].context.restore();	
+					surface[4].context.fillStyle = 'pink';
+					surface[4].context.fill();
+					surface[4].context.lineWidth = 2;
+					surface[4].context.stroke();
+					
+					for(var i = 0; i < axis.length; i++){
+						if(correctFlg[i] == false){
+							scene.removeChild(sprite[i]);
+							scene.addChild(sprite[i]);
+						}
+					}
+					
+					sprite[4].removeEventListener(enchant.Event.TOUCH_START, onTouchStartSprite4);
+					sprite[4].removeEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite4);
+				}
+			}
+			
+			//図形5（三角形小）
+			if(
+				sprite[5].x == 107 && sprite[5].y == 150 && sprite[5].rotation == 270
+				&& smallTriangle[0] == false && bigTriangle[2] == false ||
+				sprite[5].x == 91 && sprite[5].y == 166 && sprite[5].rotation == 180
+				&& smallTriangle[1] == false ||
+				sprite[5].x == 106 && sprite[5].y == 182 && sprite[5].rotation == 90
+				&& smallTriangle[2] == false && bigTriangle[1] == false ||
+				sprite[5].x == 168 && sprite[5].y == 150 && sprite[5].rotation == 270
+				&& smallTriangle[3] == false && bigTriangle[2] == false ||
+				sprite[5].x == 184 && sprite[5].y == 166 && sprite[5].rotation == 0
+				&& smallTriangle[4] == false ||
+				sprite[5].x == 168 && sprite[5].y == 182 && sprite[5].rotation == 90
+				&& smallTriangle[5] == false && bigTriangle[1] == false
+			){
+				if(correctFlg[5] == false){
+				
+					//重複判定
+					if(sprite[5].x == 107 && sprite[5].y == 150 && sprite[5].rotation == 270){
+						smallTriangle[0] = true;
+					}
+					if(sprite[5].x == 91 && sprite[5].y == 166 && sprite[5].rotation == 180){
+						smallTriangle[1] = true;
+					}
+					if(sprite[5].x == 106 && sprite[5].y == 182 && sprite[5].rotation == 90){
+						smallTriangle[2] = true;
+					}
+					if(sprite[5].x == 168 && sprite[5].y == 150 && sprite[5].rotation == 270){
+						smallTriangle[3] = true;
+					}
+					if(sprite[5].x == 184 && sprite[5].y == 166 && sprite[5].rotation == 0){
+						smallTriangle[4] = true;
+					}
+					if(sprite[5].x == 168 && sprite[5].y == 182 && sprite[5].rotation == 90){
+						smallTriangle[5] = true;
+					}
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/get.mp3'];
+						se.play();
+					}
+					else{
+						var se = new Media(getPath() + 'sound/get.mp3',
+						function(){
+							//
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						se.play();
+					}
+					
+					correctFlg[5] = true;
+					
+					surface[5].context.restore();	
+					surface[5].context.fillStyle = 'pink';
+					surface[5].context.fill();
+					surface[5].context.lineWidth = 2;
+					surface[5].context.stroke();
+					
+					for(var i = 0; i < axis.length; i++){
+						if(correctFlg[i] == false){
+							scene.removeChild(sprite[i]);
+							scene.addChild(sprite[i]);
+						}
+					}
+					
+					sprite[5].removeEventListener(enchant.Event.TOUCH_START, onTouchStartSprite5);
+					sprite[5].removeEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite5);
+				}
+			}
+			
+			//図形6（三角形小）
+			if(
+				sprite[6].x == 92 && sprite[6].y == 167 && sprite[6].rotation == 180
+				&& smallTriangle[0] == false && bigTriangle[2] == false ||
+				sprite[6].x == 76 && sprite[6].y == 181 && sprite[6].rotation == 90
+				&& smallTriangle[1] == false  ||
+				sprite[6].x == 91 && sprite[6].y == 197 && sprite[6].rotation == 0
+				&& smallTriangle[2] == false && bigTriangle[1] == false  ||
+				sprite[6].x == 153 && sprite[6].y == 165 && sprite[6].rotation == 180
+				&& smallTriangle[3] == false && bigTriangle[2] == false ||
+				sprite[6].x == 170 && sprite[6].y == 181 && sprite[6].rotation == 270
+				&& smallTriangle[4] == false ||
+				sprite[6].x == 153 && sprite[6].y == 197 && sprite[6].rotation == 0
+				&& smallTriangle[5] == false && bigTriangle[1] == false
+			){
+				if(correctFlg[6] == false){
+				
+					//重複判定
+					if(sprite[6].x == 92 && sprite[6].y == 167 && sprite[6].rotation == 180){
+						smallTriangle[0] = true;
+					}
+					if(sprite[6].x == 76 && sprite[6].y == 181 && sprite[6].rotation == 90){
+						smallTriangle[1] = true;
+					}
+					if(sprite[6].x == 91 && sprite[6].y == 197 && sprite[6].rotation == 0){
+						smallTriangle[2] = true;
+					}
+					if(sprite[6].x == 153 && sprite[6].y == 165 && sprite[6].rotation == 180){
+						smallTriangle[3] = true;
+					}
+					if(sprite[6].x == 170 && sprite[6].y == 181 && sprite[6].rotation == 270){
+						smallTriangle[4] = true;
+					}
+					if(sprite[6].x == 153 && sprite[6].y == 197 && sprite[6].rotation == 0){
+						smallTriangle[5] = true;
+					}
+					
+					if(appFlg == 0){
+						var se = game.assets['sound/get.mp3'];	
+						se.play();
+					}
+					else{
+						var se = new Media(getPath() + 'sound/get.mp3',
+						function(){
+							//
+						},function(e){
+							alert('もんだいがおきました');
+						});
+						se.play();
+					}
+					
+					correctFlg[6] = true;
+					
+					surface[6].context.restore();	
+					surface[6].context.fillStyle = 'pink';
+					surface[6].context.fill();
+					surface[6].context.lineWidth = 2;
+					surface[6].context.stroke();
+					
+					for(var i = 0; i < axis.length; i++){
+						if(correctFlg[i] == false){
+							scene.removeChild(sprite[i]);
+							scene.addChild(sprite[i]);
+						}
+					}
+					
+					sprite[6].removeEventListener(enchant.Event.TOUCH_START, onTouchStartSprite6);
+					sprite[6].removeEventListener(enchant.Event.TOUCH_MOVE, onTouchMoveSprite6);
+				}
+			}
+			
+			//spriteを360度以内に戻す
+			for(var i = 0; i < axis.length; i++){
+				sprite[i].rotation = sprite[i].rotation % 360;
+			}
+				
+			//正解判定デバッグ
+			/*
+			for(var i = 0; i < axis.length; i++){
+				if(i == 5 || i == 6){
+					console.log('図形' + i + 'X軸：' + sprite[i].x);
+					console.log('図形' + i + 'Y軸：' + sprite[i].y);
+					console.log('図形' + i + '角度：'+sprite[i].rotation);
+				}
+			}
+			*/
+			
+			if(clearFlg == true){
+				surface[active].context.restore();		
+				surface[active].context.strokeStyle = 'grey';
+				surface[active].context.lineWidth = 2;
+				surface[active].context.stroke();
+			}
+			
+			//ENTER_FRAMEリムーブ時に1階通る問題対策
+			onEnterFrameCnt++;
+		};
+		
+		//ゲームクリア
+		
+		var clearCnt = 0;
+		function onEnterFrameClear(){
+			
+			//BGM再生
+			if(appFlg == 0){
+			
+				//if(clearFlg == true && gameFlg == false){
+				//if(clearWait > 32){
+				bgmClear = game.assets['sound/ashitaetudukusora.mp3'];
+				bgmClear.play();
+				//}
+				//}
+			}
+			
+			for(var i = 0; i < butterflyCnt; i++){
+			
+				//右に進む
+				if(butterfly[i].scaleX > 0){
+					butterfly[i].x += Math.floor(Math.random() * 8);
+					/*
+					if(i % 2 == 0){
+						butterfly[i].frame = butterfly[i].anim[clearCnt % 4];
+					}
+					else{
+						butterfly[i].frame = butterfly[i].anim[(clearCnt + 1) % 4];
+					}
+					*/
+					butterfly[i].frame = butterfly[i].anim[Math.floor(Math.random() * 3)];
+					
+					//上下揺らぎ
+					if(Math.floor(Math.random() * 2) == 1){
+						butterfly[i].y += 1;
+					}
+					else if(Math.floor(Math.random() * 1 == 2)){
+						butterfly[i].y -= 1;
+					}
+					
+					//左向きにかえる
+					if(butterfly[i].x > 320 + 160 + 64){
+						butterfly[i].scaleX *= -1;
+					}
+				}
+				//左に進む
+				else if(butterfly[i].scaleX < 0){
+					butterfly[i].x -= Math.floor(Math.random() * 8);
+					butterfly[i].frame = butterfly[i].anim[clearCnt % 4];
+					
+					//上下揺らぎ
+					if(Math.floor(Math.random() * 2) == 1){
+						butterfly[i].y -= 2;
+					}
+					else{
+						butterfly[i].y += 1;
+					}
+					
+					//右向きに帰る
+					if(butterfly[i].x < -1 * (160 + 64)){
+						butterfly[i].scaleX *= -1;
+					}
+				}
+			}
+			
+			clearCnt++;
+		}
+		
+		
+		//Androidの戻るボタンが押されたとき	
+		if(appFlg == 1 && osFlg == 0){
+			document.addEventListener("backbutton", function(){
+			
+				//シーンリセット
+				game.removeEventListener(enchant.Event.ENTER_FRAME, onEnterFrameGame);
+				game.removeEventListener(enchant.Event.ENTER_FRAME, onEnterFrameClear);
+				game.popScene();
+				//game.pushScene(game.sceneHouse());
+				
+				//gameFlg = false;
+				
+				//BGM停止
+				if(appFlg == 0){
+					if(gameFlg == true){
+						bgmGame.stop();
+						gameFlg = false;
+					}
+					
+					if(clearFlg == true){
+						bgmClear.stop();
+						clearFlg = false;
+					}
+				}
+				else{
+					if(gameFlg == true){
+						bgmGame.pause();
+						bgmGame.release();
+						gameFlg = false;
+					}
+					
+					if(clearFlg == true){
+						bgmClear.pause();
+						clearFlg = false;
+					}
+				}
+				
+				active = 0;
+				
+				for(var i = 0; i < correctFlg.length; i++){
+					correctFlg[i] = false;
+				}
+				
+				for(var i = 0; i < bigTriangle.length; i++){
+					bigTriangle[i] = false;
+				}
+				
+				for(var i = 0; i < smallTriangle.length; i++){
+					smallTriangle[i] = false;
+				}
+				
+				for(var i = 0; i < axis.length; i++){
+					scene.removeChild(sprite[i]);
+					scene.addChild(sprite[i]);
+				}
+				
+				for(var i = 0; i < butterfly.length; i++){
+					scene.removeChild(butterfly[i]);
+				}
+				
+				butterfly.clear();
+				
+			}, true);	
+		}
+		
+		return scene;
+	};
+	
+	game.start();
+};
+
+/*
+document.addEventListener("menubutton", function(){
+
+	alert('メニュー');
+	
+}, true);
+
+document.addEventListener("searchbutton", function(){
+
+	alert('検索');
+	
+}, true);
+
+document.addEventListener("pause", function(){
+	alert('ポーズ');				
+}, true);
+
+document.addEventListener("resume", function(){
+	alert('リズーム');				
+}, true);
+
+document.addEventListener("online", function(){
+	alert('オンライン');				
+}, true);
+
+document.addEventListener("offline", function(){
+	alert('オフライン');				
+}, true);
+*/
+</script>
+</head>
+<body>
+
+</body>
+</html>
